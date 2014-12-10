@@ -1,12 +1,13 @@
 # Basic OMD installation for testing
 # ==================================
 #
-#  * Based on Ubuntu 13.10 (backport of phusion/baseimage-docker)
+#  * Based on Ubuntu trusty (phusion/baseimage-docker)
 #  * Installs OMD from http://labs.consol.de/repo/stable (only has omd for ubuntu 13.10)
 #  * Installs check_mk_agent in docker itself
-#  * Creates a initial sandbox site in OMD
+#  * Creates a initial master site in OMD
 #
-FROM      ubuntu:latest
+#FROM      ubuntu:trusty
+FROM       phusion/baseimage:latest
 MAINTAINER Springer Platform Engineering Team <platform-engineering@springer.com>
 MAINTAINER Hector Rivas <hector.rivas@springer.com>
 MAINTAINER Yifang Dai <yifangd+gh@gmail.com>
@@ -23,7 +24,7 @@ EXPOSE 22 80 6556
 # First register the new repo
 RUN gpg --keyserver keys.gnupg.net --recv-keys F8C1CA08A57B9ED7
 RUN gpg --armor --export F8C1CA08A57B9ED7 | apt-key add -
-RUN echo 'deb http://labs.consol.de/repo/stable/ubuntu saucy main' >> /etc/apt/sources.list
+RUN echo 'deb http://labs.consol.de/repo/stable/ubuntu trusty main' >> /etc/apt/sources.list
 
 # Install OMD
 RUN apt-get update
@@ -42,10 +43,10 @@ RUN echo ServerName basic-docker-omd > /etc/apache2/conf-available/docker-server
 RUN a2enconf docker-servername
 
 # Fix warning in syslog-ng in ubuntu 13.10: https://bugs.launchpad.net/ubuntu/+source/syslog-ng/+bug/1009920
-RUN sed -i 's/^SYSLOGNG_OPTS.*/SYSLOGNG_OPTS="--no-caps --default-modules=affile,afprog,afsocket,afuser,basicfuncs,csvparser,dbparser,syslogformat"/' /etc/default/syslog-ng
+#RUN sed -i 's/^SYSLOGNG_OPTS.*/SYSLOGNG_OPTS="--no-caps --default-modules=affile,afprog,afsocket,afuser,basicfuncs,csvparser,dbparser,syslogformat"/' /etc/default/syslog-ng
 
 #####################################################################################
-# Setup the initial OMD site 'sandbox'
+# Setup the initial OMD site 'master'
 #
 # This method is a little bit hacky, and I had to do some workarounds:
 #  1. tmpfs is not supported by standard docker (can be recompiled). 
@@ -59,54 +60,54 @@ RUN sed -i 's/^SYSLOGNG_OPTS.*/SYSLOGNG_OPTS="--no-caps --default-modules=affile
 # Any about this feedback is appreciated.
 #
 
-# Create sandbox site.  Will fail, as commented
-RUN omd create sandbox || true
+# Create master site.  Will fail, as commented
+RUN omd create master || true
 
 # Disable the TMPFS in the new generated site conf... hacky, hacky :)
-RUN sed "s/CONFIG_TMPFS='on'/CONFIG_TMPFS='off'/" -i /omd/sites/sandbox/etc/omd/site.conf 
+RUN sed "s/CONFIG_TMPFS='on'/CONFIG_TMPFS='off'/" -i /omd/sites/master/etc/omd/site.conf 
 
 # Add the new user to crontab, to avoid error merging crontabs
-RUN adduser sandbox crontab 
+RUN adduser master crontab 
 
 # OK, now the site starts :)
-RUN omd start sandbox
+RUN omd start master
 
 #####################################################################################
 # Initial configuration of the site and image
 
 # Add localhost as node monitored
-ADD hosts.mk /omd/sites/sandbox/etc/check_mk/conf.d/wato/hosts.mk
+ADD hosts.mk /omd/sites/master/etc/check_mk/conf.d/wato/hosts.mk
 
 # First OMD service discovery and compile
-RUN /etc/init.d/xinetd start && su - sandbox -c "cmk -II"
-RUN su - sandbox -c "cmk -R"
+RUN /etc/init.d/xinetd start && su - master -c "cmk -II"
+RUN su - master -c "cmk -R"
 
 # Fix some permission issues (not sure why it happens)
-RUN chown -R sandbox.sandbox /omd/sites/sandbox
+RUN chown -R master.master /omd/sites/master
 
 #####################################################################################
 # Other stuff
 # Generate the SSH keys of the server
 RUN /etc/my_init.d/00_regen_ssh_host_keys.sh
 
-# Copy ssh key for root and sandbox
-RUN mkdir -p /omd/sites/sandbox/.ssh /root/.ssh
+# Copy ssh key for root and master
+RUN mkdir -p /omd/sites/master/.ssh /root/.ssh
 ADD ssh/id_rsa /root/.ssh/id_rsa
 ADD ssh/id_rsa.pub /root/.ssh/id_rsa.pub
 ADD ssh/id_rsa.pub /root/.ssh/authorized_keys
-ADD ssh/id_rsa /omd/sites/sandbox/.ssh/id_rsa
-ADD ssh/id_rsa.pub /omd/sites/sandbox/.ssh/id_rsa.pub
-ADD ssh/id_rsa.pub /omd/sites/sandbox/.ssh/authorized_keys
-RUN chmod 400 /root/.ssh/id_rsa /omd/sites/sandbox/.ssh/id_rsa 
+ADD ssh/id_rsa /omd/sites/master/.ssh/id_rsa
+ADD ssh/id_rsa.pub /omd/sites/master/.ssh/id_rsa.pub
+ADD ssh/id_rsa.pub /omd/sites/master/.ssh/authorized_keys
+RUN chmod 400 /root/.ssh/id_rsa /omd/sites/master/.ssh/id_rsa 
 
 # Utility script to print the ssh key
 # The user can use: docker run --entrypoint="/usr/bin/print_ssh_private_key" <image>
 ADD print_ssh_private_key /usr/bin/print_ssh_private_key
 
-# Unlock the user sandbox to allow SSH access
-RUN usermod -p sandbox sandbox
-RUN passwd -u sandbox
+# Unlock the user master to allow SSH access
+RUN usermod -p master master
+RUN passwd -u master
 
 # Add scripts to start services in baseimage my_init:
 ADD 10_startup_base_services /etc/my_init.d/10_startup_base_services
-ADD 20_startup_omd_sandbox /etc/my_init.d/20_startup_omd_sandbox
+ADD 20_startup_omd_master /etc/my_init.d/20_startup_omd_master
