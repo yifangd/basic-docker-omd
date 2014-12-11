@@ -4,7 +4,7 @@ key:
 
 
 build:
-	docker build .
+	docker build -t yifangd/trusty-omd .
 
 run:
-	docker run -p 8888:80 --rm -t -i basic-docker-omd:latest /sbin/my_init -- bash -l
+	docker run -p 8888:80 --rm -t -i yifangd/trusty-omd:latest /sbin/my_init -- bash -l
